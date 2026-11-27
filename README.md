@@ -19,7 +19,8 @@ Quick-Start only works when you ask it to. It has no background service, timers,
   - Windows with no launch command are flagged in the preview, so you can set one or remove the window right away instead of finding out the next morning.
 - **Smart merge restore**: windows that are already open are reused and moved into place, and missing apps are launched. Unrelated windows are never closed. Windows that are already in the right place are left alone.
 - **Layout fidelity**: each workspace's layout mode (`dwindle`, `scrolling`, `floating`), exact floating position and size (pinned windows are pinned again), scrolling column order and widths, and dwindle split arrangement and ratios. The dwindle tree is rebuilt from the saved window rectangles.
-- **Monitor fallback**: workspaces from a disconnected monitor move to the focused monitor, floating windows are scaled to fit it, and the panel says so.
+- **Monitors found by screen, not port**: each monitor is saved with its make and model, so the same screen is recognised on any port or cable (`DP-2` today, `HDMI-A-1` tomorrow), and the panel shows it as `Built-in` or its model name. A screen that isn't connected falls back to the focused monitor: its workspaces move there, floating windows are scaled to fit, and the panel says so.
+- **Private preview**: blur window titles and websites in the session preview with the eye button (or <kbd>b</kbd>, or the plugin setting). Hover a window to read it.
 - **Quiet and cancellable**: apps launch silently into their own workspaces. New windows are tracked through Hyprland's event socket, and progress such as `6/9` shows on the bar icon. You can cancel at any time. Any app that hasn't opened within 15 seconds is reported without blocking the rest. When everything has settled, the saved workspaces are shown again and the window that had focus gets it back.
 - **Filters**: transient portals, auth prompts, picture-in-picture windows, and the screensaver are never saved. Special workspaces (scratchpad and similar) are skipped unless you turn them on, and you can keep a list of app classes to always ignore.
 
@@ -56,6 +57,7 @@ When the panel is open:
 | <kbd>r</kbd> | Rename the selected session |
 | <kbd>x</kbd> / <kbd>Delete</kbd> | Delete the selected session (press twice) |
 | <kbd>c</kbd> | Cancel a running restore |
+| <kbd>b</kbd> | Blur or show window titles and websites |
 | <kbd>?</kbd> / <kbd>i</kbd> | Show or hide how Quick-Start works |
 | <kbd>Esc</kbd> | Close |
 

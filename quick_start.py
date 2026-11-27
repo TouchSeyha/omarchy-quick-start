@@ -657,6 +657,10 @@ def capture(hypr, proc, desktop, include_special=False, ignore=()):
         "monitors": [
             {
                 "name": m.get("name", ""),
+                # The screen itself, so a restore finds it on any port or cable.
+                "description": clip(m.get("description"), MAX_TITLE),
+                "make": clip(m.get("make"), MAX_CLASS),
+                "model": clip(m.get("model"), MAX_CLASS),
                 "x": int(m.get("x") or 0),
                 "y": int(m.get("y") or 0),
                 "width": monitor_logical(m)[0],
@@ -669,6 +673,34 @@ def capture(hypr, proc, desktop, include_special=False, ignore=()):
         "focusedMonitor": focused,
         "windows": windows,
     }
+
+
+def match_monitors(saved, live):
+    """Saved monitor name -> live monitor, by the screen first, then the port.
+
+    Ports change with the cable or socket used (DP-2 one day, HDMI-A-1 the
+    next), so the screen's own description (make, model, serial) is tried
+    first. Each live monitor is claimed once. Sessions saved before the
+    description was stored fall through to the port name, as before.
+    """
+    matched = {}
+    used = set()
+    for name, info in saved.items():
+        description = (info.get("description") or "").strip()
+        if not description:
+            continue
+        candidates = [m for m in live.values() if (m.get("description") or "").strip() == description and m.get("name") not in used]
+        if len(candidates) > 1:
+            candidates = [m for m in candidates if m.get("name") == name]
+        if len(candidates) == 1:
+            matched[name] = candidates[0]
+            used.add(candidates[0].get("name"))
+    for name in saved:
+        if name in matched or name not in live or name in used:
+            continue
+        matched[name] = live[name]
+        used.add(name)
+    return matched
 
 
 # ---------------------------------------------------------------- slot storage
@@ -809,11 +841,12 @@ class Restorer:
         live = {m.get("name"): m for m in self.hypr.monitors()}
         focused = next((m for m in live.values() if m.get("focused")), None) or (next(iter(live.values())) if live else {})
         saved = {m.get("name"): m for m in self.slot.get("monitors", [])}
+        matched = match_monitors(saved, live)
         self.monitor_map = {}
         missing = []
         for name, info in saved.items():
-            target = live.get(name) or focused
-            if name not in live:
+            target = matched.get(name) or focused
+            if name not in matched:
                 missing.append(name)
             width, height = monitor_logical(target) if target else (info.get("width", 0), info.get("height", 0))
             self.monitor_map[name] = {

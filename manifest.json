@@ -20,7 +20,8 @@
     "defaultSection": "right",
     "defaults": {
       "includeSpecialWorkspaces": false,
-      "ignoreClasses": ""
+      "ignoreClasses": "",
+      "blurDetails": false
     },
     "schema": [
       {
@@ -35,6 +36,13 @@
         "label": "Always ignore these app classes (comma separated, * wildcards)",
         "defaultValue": "",
         "description": "Windows whose class matches are never saved, for example: com.onepassword.OnePassword, steam*"
+      },
+      {
+        "key": "blurDetails",
+        "type": "boolean",
+        "label": "Blur window titles and websites in the session preview",
+        "defaultValue": false,
+        "description": "Useful when sharing or recording your screen. Hover a window to read it, or press B in the panel to switch."
       }
     ]
   }

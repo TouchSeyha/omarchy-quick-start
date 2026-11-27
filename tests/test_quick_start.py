@@ -131,6 +131,29 @@ DESKTOP = {
 }
 
 
+class MonitorMatchTests(unittest.TestCase):
+    def test_the_same_screen_is_found_on_another_port(self):
+        dell = "Dell Inc. DELL S2421HN 6LMX1H3"
+        saved = {"DP-2": {"name": "DP-2", "description": dell}, "eDP-1": {"name": "eDP-1", "description": "Samsung panel"}}
+        live = {"HDMI-A-1": {"name": "HDMI-A-1", "description": dell}, "eDP-1": {"name": "eDP-1", "description": "Samsung panel"}}
+        matched = qs.match_monitors(saved, live)
+        self.assertEqual(matched["DP-2"]["name"], "HDMI-A-1")
+        self.assertEqual(matched["eDP-1"]["name"], "eDP-1")
+
+    def test_a_different_screen_on_the_old_port_is_not_mistaken_for_it(self):
+        saved = {"DP-2": {"name": "DP-2", "description": "Dell A"}, "DP-1": {"name": "DP-1", "description": "LG B"}}
+        live = {"DP-1": {"name": "DP-1", "description": "Dell A"}, "DP-2": {"name": "DP-2", "description": "LG B"}}
+        matched = qs.match_monitors(saved, live)
+        self.assertEqual((matched["DP-2"]["name"], matched["DP-1"]["name"]), ("DP-1", "DP-2"))
+
+    def test_old_sessions_and_twin_screens_fall_back_to_the_port(self):
+        saved = {"DP-2": {"name": "DP-2"}, "DP-3": {"name": "DP-3", "description": "Twin"}, "DP-4": {"name": "DP-4", "description": "Twin"}}
+        live = {"DP-2": {"name": "DP-2", "description": "X"}, "DP-3": {"name": "DP-3", "description": "Twin"}, "DP-4": {"name": "DP-4", "description": "Twin"}}
+        matched = qs.match_monitors(saved, live)
+        self.assertEqual({k: v["name"] for k, v in matched.items()}, {"DP-2": "DP-2", "DP-3": "DP-3", "DP-4": "DP-4"})
+        self.assertEqual(qs.match_monitors({"DP-9": {"name": "DP-9", "description": "Gone"}}, live), {})
+
+
 class QuotingTests(unittest.TestCase):
     def test_lua_str_escapes_everything_that_could_break_out(self):
         self.assertEqual(qs.lua_str('a"b\\c'), '"a\\"b\\\\c"')

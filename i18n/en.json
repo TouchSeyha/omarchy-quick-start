@@ -62,5 +62,9 @@
   "help.keyDelete": "Delete",
   "help.keyName": "Name field",
   "help.keyHelp": "Help",
-  "help.keyClose": "Close"
+  "help.keyClose": "Close",
+  "help.keyBlur": "Blur",
+  "blur.on": "Blur window titles and websites",
+  "blur.off": "Show window titles and websites",
+  "monitor.builtin": "Built-in"
 }

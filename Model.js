@@ -76,6 +76,12 @@ function cleanSlot(raw) {
     var ws = rawWs[j] || {}
     workspaces.push({ name: clipText(ws.name, 64), monitor: clipText(ws.monitor, 64), mode: clipText(ws.mode, 16) })
   }
+  var monitors = []
+  var rawMon = Array.isArray(raw.monitors) ? raw.monitors : []
+  for (var m = 0; m < rawMon.length && m < 16; m++) {
+    var mon = rawMon[m] || {}
+    monitors.push({ name: clipText(mon.name, 64), description: clipText(mon.description, MAX_TEXT), model: clipText(mon.model, 128) })
+  }
   var warnings = 0
   for (var k = 0; k < windows.length; k++) if (windows[k].warning) warnings++
   return {
@@ -84,6 +90,7 @@ function cleanSlot(raw) {
     updated: toInt(raw.updated, 0),
     windows: windows,
     workspaces: workspaces,
+    monitors: monitors,
     warningCount: warnings
   }
 }
@@ -204,12 +211,57 @@ function workspaceRank(name) {
   return 50000
 }
 
-// "Workspace 11", or the special/named workspace's own name.
+// Omarchy gives each monitor a block of ten workspaces (1-10, 11-20, ...)
+// and its bar shows only the place inside the block, so 11 reads as "1".
+// Saved data keeps Hyprland's real number; only labels use the bar's.
+var BAR_SLOTS = 10
+
+function workspaceSlot(name) {
+  var s = String(name || "")
+  var n = Number(s)
+  if (s !== "" && isFinite(n) && n >= 1) return String((Math.floor(n) - 1) % BAR_SLOTS + 1)
+  return ""
+}
+
+// "Workspace 1" (as the bar shows it), or the special/named workspace's name.
 function workspaceLabel(name, tr) {
   var s = String(name || "")
   if (s.indexOf("special:") === 0) return tr("workspace.special").arg(s.substring(8))
   if (s.indexOf("name:") === 0) return tr("workspace.named").arg(s.substring(5))
-  return tr("workspace.number").arg(s)
+  return tr("workspace.number").arg(workspaceSlot(s) || s)
+}
+
+// A screen by what it is, not the port it is plugged into: "Built-in" for
+// a laptop panel, else its model ("DELL S2421HN"). Sessions saved before
+// models were stored show the port name.
+function monitorLabel(slot, name, tr) {
+  var port = String(name || "")
+  if (/^(eDP|LVDS|DSI)-/.test(port)) return tr("monitor.builtin")
+  var list = slot ? listOf(slot.monitors) : []
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].name !== port) continue
+    var model = String(list[i].model || "").trim()
+    if (model !== "") return model
+    var description = String(list[i].description || "").trim()
+    if (description !== "") return description
+  }
+  return port
+}
+
+// Workspace groups split by monitor, in the order the monitors first appear.
+function monitorGroups(groups) {
+  var out = []
+  var byMonitor = {}
+  var list = listOf(groups)
+  for (var i = 0; i < list.length; i++) {
+    var key = String(list[i].monitor || "")
+    if (!byMonitor[key]) {
+      byMonitor[key] = { monitor: key, groups: [] }
+      out.push(byMonitor[key])
+    }
+    byMonitor[key].groups.push(list[i])
+  }
+  return out
 }
 
 function windowLabel(w) {
@@ -295,13 +347,14 @@ function themeHues(raw) {
   return out
 }
 
-// The same workspace gets the same tint in every session: numbered ones
-// cycle through the hues, named and special ones hash to a stable pick.
+// The same workspace gets the same tint in every session, keyed by the
+// number the bar shows, so "1" matches on every monitor. Named and special
+// workspaces hash to a stable pick.
 function workspaceHueIndex(name, count) {
   if (!(count > 0)) return -1
   var s = String(name || "")
-  var n = Number(s)
-  if (s !== "" && isFinite(n) && n >= 1) return (Math.floor(n) - 1) % count
+  var slot = workspaceSlot(s)
+  if (slot !== "") return (Number(slot) - 1) % count
   var h = 0
   for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 1000003
   return h % count
@@ -312,7 +365,7 @@ function workspaceShort(name) {
   var s = String(name || "")
   if (s.indexOf("special:") === 0) return s.substring(8)
   if (s.indexOf("name:") === 0) return s.substring(5)
-  return s
+  return workspaceSlot(s) || s
 }
 
 if (typeof module !== "undefined") {
@@ -334,6 +387,9 @@ if (typeof module !== "undefined") {
     themeHues: themeHues,
     workspaceHueIndex: workspaceHueIndex,
     workspaceShort: workspaceShort,
+    workspaceSlot: workspaceSlot,
+    monitorGroups: monitorGroups,
+    monitorLabel: monitorLabel,
     windowApp: windowApp,
     windowDetail: windowDetail
   }

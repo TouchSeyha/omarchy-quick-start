@@ -82,7 +82,7 @@ test("groupWindows orders workspaces numerically with specials last and accepts 
   const arrayLike = { windows: { length: 1, 0: slot.windows[0] }, workspaces: { length: 0 } }
   assert.equal(Model.groupWindows(arrayLike).length, 1)
   assert.equal(Model.workspaceLabel("special:scratchpad", tr), "Special · scratchpad")
-  assert.equal(Model.workspaceLabel("11", tr), "Workspace 11")
+  assert.equal(Model.workspaceLabel("11", tr), "Workspace 1")
 })
 
 test("labels, names, and command text", () => {
@@ -122,14 +122,22 @@ test("themeHues reads named theme colors in order, skipping red, with ANSI fallb
 test("workspaceHueIndex is stable per workspace and bounded", () => {
   assert.equal(Model.workspaceHueIndex("1", 6), 0)
   assert.equal(Model.workspaceHueIndex("7", 6), 0)
-  assert.equal(Model.workspaceHueIndex("12", 6), 5)
+  // Keyed by the bar's number: 11 and 12 on the second monitor match 1 and 2.
+  assert.equal(Model.workspaceHueIndex("11", 6), 0)
+  assert.equal(Model.workspaceHueIndex("12", 6), 1)
+  assert.equal(Model.workspaceHueIndex("10", 6), 3)
   assert.equal(Model.workspaceHueIndex("1", 0), -1)
   const special = Model.workspaceHueIndex("special:scratchpad", 6)
   assert.ok(special >= 0 && special < 6)
   assert.equal(Model.workspaceHueIndex("special:scratchpad", 6), special)
   assert.equal(Model.workspaceShort("special:scratchpad"), "scratchpad")
   assert.equal(Model.workspaceShort("name:code"), "code")
-  assert.equal(Model.workspaceShort("11"), "11")
+  assert.equal(Model.workspaceShort("11"), "1")
+  assert.equal(Model.workspaceShort("20"), "10")
+  assert.equal(Model.workspaceLabel("12", tr), "Workspace 2")
+  assert.equal(Model.workspaceSlot("special:x"), "")
+  const byMonitor = Model.monitorGroups([{ workspace: "1", monitor: "eDP-1" }, { workspace: "2", monitor: "eDP-1" }, { workspace: "11", monitor: "DP-2" }])
+  assert.deepEqual(byMonitor.map((m) => [m.monitor, m.groups.map((g) => g.workspace)]), [["eDP-1", ["1", "2"]], ["DP-2", ["11"]]])
 })
 
 test("window rows lead with the app and keep the title as a hint", () => {
@@ -150,4 +158,16 @@ test("window rows lead with the app and keep the title as a hint", () => {
   assert.equal(Model.windowApp({ cls: "dev.zed.Zed", title: "proj — file" }), "Zed")
   assert.equal(Model.windowDetail({ appName: "Zed", title: "Zed" }, ""), "")
   assert.equal(Model.cleanWindow({ key: "w1", appName: "T3 Code", launch: { kind: "terminal", cwd: "/tmp" } }).cwd, "/tmp")
+})
+
+test("monitors are named by the screen, not the port", () => {
+  const slot = Model.cleanSlot({ id: "w", windows: [], monitors: [
+    { name: "DP-2", description: "Dell Inc. DELL S2421HN 6LMX1H3", model: "DELL S2421HN" },
+    { name: "HDMI-A-1", description: "Acme Screen" },
+  ] })
+  const t = (key) => ({ "monitor.builtin": "Built-in" }[key] || key)
+  assert.equal(Model.monitorLabel(slot, "eDP-1", t), "Built-in")
+  assert.equal(Model.monitorLabel(slot, "DP-2", t), "DELL S2421HN")
+  assert.equal(Model.monitorLabel(slot, "HDMI-A-1", t), "Acme Screen")
+  assert.equal(Model.monitorLabel({ monitors: [] }, "DP-3", t), "DP-3")
 })

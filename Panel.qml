@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -22,6 +23,7 @@ Panel {
 
   readonly property bool includeSpecial: setting("includeSpecialWorkspaces", false) === true
   readonly property string ignoreClasses: String(setting("ignoreClasses", ""))
+  readonly property bool blurDetails: setting("blurDetails", false) === true
 
   readonly property var slots: service ? service.slots : []
   readonly property bool restoring: service ? service.restoring : false
@@ -79,12 +81,27 @@ Panel {
   readonly property string chevronDown: "󰅀"    // md-chevron_down
   readonly property string chevronUp: "󰅃"      // md-chevron_up
   readonly property string infoGlyph: "󰋽"      // md-information_outline
+  readonly property string eyeGlyph: "󰈈"       // md-eye
+  readonly property string eyeOffGlyph: "󰈉"    // md-eye_off
 
   // Give keys back to the panel after an inline field closes.
   function refocus() {
     textFocus = false
     if (panel.loadedContent) panel.loadedContent.forceActiveFocus()
   }
+
+  // Applied locally first so the rows redraw on the click; the shell.json
+  // write comes back through the bar as the same value.
+  function setBlurDetails(on) {
+    var entry = { id: root.moduleName }
+    for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
+    entry.blurDetails = on
+    root.settings = entry
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
+  }
+
+  function monitorName(slot, port) { return Model.monitorLabel(slot, port, strings.t) }
 
   function saveCurrent(name) {
     var clean = Model.cleanName(name)
@@ -262,6 +279,7 @@ Panel {
         else if ((t === "r" || t === "R") && id) root.renamingId = id
         else if (t === "c" || t === "C") root.service.cancelRestore()
         else if (t === "?" || t === "i" || t === "I") root.helpOpen = !root.helpOpen
+        else if (t === "b" || t === "B") root.setBlurDetails(!root.blurDetails)
       }
 
       Flickable {
@@ -296,13 +314,25 @@ Panel {
               }
             }
             trailingControl: Component {
-              PanelActionButton {
-                iconText: root.infoGlyph
-                tooltipText: root.helpOpen ? strings.t("help.hide") : strings.t("help.show")
-                foreground: root.helpOpen ? root.accent : root.dim
-                hoverColor: root.accent
-                fontFamily: root.fontFamily
-                onClicked: root.helpOpen = !root.helpOpen
+              Row {
+                spacing: Style.space(2)
+
+                PanelActionButton {
+                  iconText: root.blurDetails ? root.eyeOffGlyph : root.eyeGlyph
+                  tooltipText: root.blurDetails ? strings.t("blur.off") : strings.t("blur.on")
+                  foreground: root.blurDetails ? root.accent : root.dim
+                  hoverColor: root.accent
+                  fontFamily: root.fontFamily
+                  onClicked: root.setBlurDetails(!root.blurDetails)
+                }
+                PanelActionButton {
+                  iconText: root.infoGlyph
+                  tooltipText: root.helpOpen ? strings.t("help.hide") : strings.t("help.show")
+                  foreground: root.helpOpen ? root.accent : root.dim
+                  hoverColor: root.accent
+                  fontFamily: root.fontFamily
+                  onClicked: root.helpOpen = !root.helpOpen
+                }
               }
             }
           }
@@ -385,7 +415,7 @@ Panel {
                   model: [
                     ["↑ ↓", "help.keySelect"], ["Enter", "help.keyRestore"], ["E", "help.keyWindows"],
                     ["U", "help.keyUpdate"], ["R", "help.keyRename"], ["X", "help.keyDelete"],
-                    ["S", "help.keyName"], ["?", "help.keyHelp"], ["Esc", "help.keyClose"]
+                    ["S", "help.keyName"], ["B", "help.keyBlur"], ["?", "help.keyHelp"], ["Esc", "help.keyClose"]
                   ]
                   Row {
                     required property var modelData
@@ -575,6 +605,7 @@ Panel {
     implicitHeight: cardColumn.implicitHeight + Style.space(20)
     radius: Style.cornerRadius
     readonly property var groups: Model.groupWindows(slot)
+    readonly property var monitors: Model.monitorGroups(groups)
     color: selected || restoringThis ? root.tint(root.accent, 0.07) : "transparent"
     border.width: Math.max(1, Style.normalBorderWidth)
     border.color: restoringThis ? root.accent
@@ -656,19 +687,38 @@ Panel {
 
           // One chip per saved workspace, tinted like its group below,
           // so a session's shape reads at a glance even when collapsed.
+          // Numbers follow the bar, which restarts at 1 on every monitor,
+          // so a session on several monitors names each one before its chips.
           Flow {
             width: parent.width
-            spacing: Style.space(4)
+            spacing: Style.space(10)
             visible: card.groups.length > 0
             topPadding: Style.space(2)
 
             Repeater {
-              model: card.groups
-              WorkspaceChip {
+              model: card.monitors
+              Row {
+                id: monitorChips
                 required property var modelData
-                workspace: modelData.workspace
-                label: Model.workspaceShort(modelData.workspace)
-                count: modelData.windows.length
+                spacing: Style.space(4)
+
+                PlainLabel {
+                  visible: card.monitors.length > 1 && monitorChips.modelData.monitor !== ""
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: root.monitorName(card.slot, monitorChips.modelData.monitor)
+                  color: root.dim
+                  font.pixelSize: Style.font.caption
+                }
+
+                Repeater {
+                  model: monitorChips.modelData.groups
+                  WorkspaceChip {
+                    required property var modelData
+                    workspace: modelData.workspace
+                    label: Model.workspaceShort(modelData.workspace)
+                    count: modelData.windows.length
+                  }
+                }
               }
             }
           }
@@ -774,7 +824,7 @@ Panel {
                 anchors.verticalCenter: parent.verticalCenter
                 text: (group.modelData.mode ? root.modeLabel(group.modelData.mode) : "")
                   + (group.modelData.mode && group.modelData.monitor ? " · " : "")
-                  + (group.modelData.monitor || "")
+                  + (group.modelData.monitor ? root.monitorName(card.slot, group.modelData.monitor) : "")
                 color: root.dim
                 font.pixelSize: Style.font.caption
                 elide: Text.ElideRight
@@ -859,6 +909,9 @@ Panel {
     readonly property bool editing: root.editKey === rowKey
     spacing: Style.space(4)
 
+    // Hovering a row shows its blurred line, one row at a time.
+    HoverHandler { id: rowHover }
+
     Row {
       width: parent.width
       spacing: Style.space(6)
@@ -885,6 +938,15 @@ Panel {
           visible: text !== ""
           text: row.win.warning === "unresolved" ? strings.t("window.unresolved")
             : (row.win.warning === "missing" ? strings.t("window.missing") : Model.windowDetail(row.win, root.home))
+          // Titles and sites can be private on a shared or recorded screen.
+          // Warnings are the panel's own words and stay readable.
+          layer.enabled: root.blurDetails && row.win.warning === "" && !rowHover.hovered
+          layer.effect: MultiEffect {
+            blurEnabled: true
+            blur: 1.0
+            blurMax: 28
+            blurMultiplier: 0.35
+          }
           color: row.win.warning !== "" ? root.warn : root.dim
           font.pixelSize: Style.font.caption
           wrapMode: row.win.warning !== "" ? Text.WordWrap : Text.NoWrap
