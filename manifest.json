@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "touchseyha.quick-start",
+  "name": "Quick-Start",
+  "version": "1.0.0",
+  "author": "TouchSeyha",
+  "license": "MIT",
+  "description": "Save your open Hyprland windows into named sessions and restore them to their workspaces, monitors, layouts, and sizes in one click.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Quick-Start",
+    "description": "Save the open desktop into named sessions like Work or Personal and restore one with a click.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "includeSpecialWorkspaces": false,
+      "ignoreClasses": ""
+    },
+    "schema": [
+      {
+        "key": "includeSpecialWorkspaces",
+        "type": "boolean",
+        "label": "Include special workspaces (scratchpad and similar) when saving",
+        "defaultValue": false
+      },
+      {
+        "key": "ignoreClasses",
+        "type": "string",
+        "label": "Always ignore these app classes (comma separated, * wildcards)",
+        "defaultValue": "",
+        "description": "Windows whose class matches are never saved, for example: com.onepassword.OnePassword, steam*"
+      }
+    ]
+  }
+}
