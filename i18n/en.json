@@ -46,5 +46,21 @@
   "warning.monitorFallback": "%1 is not connected; its workspaces went to %2",
   "warning.layoutFailed": "A workspace layout could not be applied",
   "warning.layoutUnsaved": "A workspace layout was applied but not saved",
-  "error.generic": "Something went wrong"
+  "error.generic": "Something went wrong",
+  "help.show": "How Quick-Start works",
+  "help.hide": "Hide help",
+  "help.what": "Quick-Start remembers which apps are open and where they sit: workspace, monitor, layout and window sizes. Restore reopens them and puts each one back.",
+  "help.limits": "It doesn't save tabs, open files or anything inside an app. Apps that restore their own session, like Zed or a browser set to continue where you left off, bring that back themselves. Terminals reopen in their folder.",
+  "help.step1": "Arrange your desktop, type a name above and press Save.",
+  "help.step2": "Press Restore to bring it back. Apps that are already open are moved into place, not opened twice.",
+  "help.step3": "Press Update to replace a session with what's on screen now.",
+  "help.keySelect": "Select",
+  "help.keyRestore": "Restore",
+  "help.keyWindows": "Windows",
+  "help.keyUpdate": "Update",
+  "help.keyRename": "Rename",
+  "help.keyDelete": "Delete",
+  "help.keyName": "Name field",
+  "help.keyHelp": "Help",
+  "help.keyClose": "Close"
 }

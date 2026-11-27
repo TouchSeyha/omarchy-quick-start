@@ -56,6 +56,7 @@ When the panel is open:
 | <kbd>r</kbd> | Rename the selected session |
 | <kbd>x</kbd> / <kbd>Delete</kbd> | Delete the selected session (press twice) |
 | <kbd>c</kbd> | Cancel a running restore |
+| <kbd>?</kbd> / <kbd>i</kbd> | Show or hide how Quick-Start works |
 | <kbd>Esc</kbd> | Close |
 
 Middle-click the bar icon to cancel a running restore.

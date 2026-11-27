@@ -479,6 +479,29 @@ def resolve_launch(client, proc, desktop, windows_for_pid=1):
     return {"kind": "unresolved", "command": [], "perWindow": False}
 
 
+def app_name(client, launch, desktop):
+    """What the user calls the app: its desktop entry's Name, never a title."""
+    entry = None
+    if launch.get("desktopId"):
+        entry = desktop.by_id.get(launch["desktopId"].lower())
+    if entry is None and launch.get("kind") != "webapp":
+        entry = desktop.lookup(client.get("class") or "", client.get("initialClass") or "")
+    if entry is not None:
+        return clip(entry.get("name"), MAX_CLASS)
+    kind = launch.get("kind")
+    argv = launch.get("command") or []
+    if kind == "webapp":
+        # A web app with no entry of its own: its site is its name.
+        url = argv[-1] if argv else ""
+        return clip(re.sub(r"^https?://", "", url).split("/")[0], MAX_CLASS)
+    if kind in ("terminal", "appimage", "process") and argv:
+        base = os.path.basename(argv[0])
+        base = re.sub(r"\.appimage$", "", base, flags=re.IGNORECASE)
+        base = re.sub(r"[-_]+", " ", base).strip()
+        return clip(base[:1].upper() + base[1:], MAX_CLASS)
+    return ""
+
+
 def validate_launch(launch):
     argv = launch.get("command") or []
     if not argv:
@@ -609,6 +632,7 @@ def capture(hypr, proc, desktop, include_special=False, ignore=()):
             "initialClass": clip(client.get("initialClass"), MAX_CLASS),
             "title": clip(client.get("title"), MAX_TITLE),
             "initialTitle": clip(client.get("initialTitle"), MAX_TITLE),
+            "appName": app_name(client, launch, desktop),
             "workspace": target,
             "monitor": monitor.get("name", ""),
             "floating": bool(client.get("floating")),

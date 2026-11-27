@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -33,11 +34,40 @@ Panel {
   property string confirmDeleteId: ""
   property string editKey: ""
   property bool textFocus: false
+  property bool helpOpen: false
 
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.4)
   readonly property color warn: bar && bar.urgent ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property color accent: Commons.Color.accent
+  readonly property string home: Quickshell.env("HOME") || ""
+
+  // Workspace tints, read from the theme's named colors so every theme
+  // brings its own. Re-read when the theme swaps (the accent changes then).
+  property var themeHues: []
+  FileView {
+    id: themeColors
+    path: Commons.Color.currentThemePath + "/colors.toml"
+    printErrors: false
+    onLoaded: root.themeHues = Model.themeHues(text())
+    onLoadFailed: root.themeHues = []
+  }
+  Connections {
+    target: Commons.Color
+    function onAccentChanged() { themeColors.reload() }
+  }
+
+  // A theme without named colors still gets distinct tints: spin the
+  // accent around the color wheel, keeping it readable on the panel.
+  function hueFor(workspace) {
+    var count = themeHues.length > 0 ? themeHues.length : 6
+    var i = Model.workspaceHueIndex(workspace, count)
+    if (themeHues.length > 0) return themeHues[i]
+    var base = accent.hslHue < 0 ? 0.6 : accent.hslHue
+    return Qt.hsla((base + i / 6) % 1, Math.max(0.45, accent.hslSaturation), Math.min(0.72, Math.max(0.58, accent.hslLightness)), 1)
+  }
+  function tint(c, a) { return Qt.rgba(c.r, c.g, c.b, a) }
 
   readonly property string iconGlyph: "󰁯"      // md-backup_restore
   readonly property string saveGlyph: "󰆓"      // md-content_save
@@ -47,7 +77,8 @@ Panel {
   readonly property string warnGlyph: "󰀦"      // md-alert
   readonly property string terminalGlyph: "󰆍"  // md-console
   readonly property string chevronDown: "󰅀"    // md-chevron_down
-  readonly property string chevronRight: "󰅂"   // md-chevron_right
+  readonly property string chevronUp: "󰅃"      // md-chevron_up
+  readonly property string infoGlyph: "󰋽"      // md-information_outline
 
   // Give keys back to the panel after an inline field closes.
   function refocus() {
@@ -157,6 +188,7 @@ Panel {
       if (service) service.refresh()
       confirmDeleteId = ""
       saveNotice = ""
+      helpOpen = false
       cursor = Math.max(0, Math.min(cursor, slots.length - 1))
     } else {
       renamingId = ""
@@ -218,6 +250,7 @@ Panel {
       onDeleteRequested: { var id = root.selectedId(); if (id) root.deleteSlot(id) }
       onCloseRequested: {
         if (root.confirmDeleteId !== "") root.confirmDeleteId = ""
+        else if (root.helpOpen) root.helpOpen = false
         else root.close()
       }
       onTabRequested: function(direction) { root.switchPanel(direction) }
@@ -228,6 +261,7 @@ Panel {
         else if ((t === "u" || t === "U") && id) root.updateSlot(id)
         else if ((t === "r" || t === "R") && id) root.renamingId = id
         else if (t === "c" || t === "C") root.service.cancelRestore()
+        else if (t === "?" || t === "i" || t === "I") root.helpOpen = !root.helpOpen
       }
 
       Flickable {
@@ -256,9 +290,131 @@ Panel {
               Text {
                 textFormat: Text.PlainText
                 text: root.iconGlyph
-                color: root.foreground
+                color: root.accent
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.display
+              }
+            }
+            trailingControl: Component {
+              PanelActionButton {
+                iconText: root.infoGlyph
+                tooltipText: root.helpOpen ? strings.t("help.hide") : strings.t("help.show")
+                foreground: root.helpOpen ? root.accent : root.dim
+                hoverColor: root.accent
+                fontFamily: root.fontFamily
+                onClicked: root.helpOpen = !root.helpOpen
+              }
+            }
+          }
+
+          // ---------- What Quick-Start does and how to use it ----------
+          Rectangle {
+            width: parent.width
+            visible: root.helpOpen
+            implicitHeight: helpColumn.implicitHeight + Style.space(24)
+            radius: Style.cornerRadius
+            color: root.tint(root.accent, 0.06)
+            border.width: Math.max(1, Style.normalBorderWidth)
+            border.color: root.tint(root.accent, 0.3)
+
+            Column {
+              id: helpColumn
+              x: Style.space(12)
+              y: Style.space(12)
+              width: parent.width - Style.space(24)
+              spacing: Style.space(10)
+
+              PlainLabel {
+                width: parent.width
+                text: strings.t("help.what")
+                wrapMode: Text.WordWrap
+                lineHeight: 1.15
+              }
+
+              PlainLabel {
+                width: parent.width
+                text: strings.t("help.limits")
+                color: root.dim
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+                lineHeight: 1.15
+              }
+
+              // The steps really are a sequence, so they are numbered.
+              Column {
+                width: parent.width
+                spacing: Style.space(6)
+
+                Repeater {
+                  model: ["help.step1", "help.step2", "help.step3"]
+                  Row {
+                    required property string modelData
+                    required property int index
+                    width: helpColumn.width
+                    spacing: Style.space(8)
+
+                    Rectangle {
+                      id: stepBadge
+                      width: Style.space(18)
+                      height: width
+                      radius: width / 2
+                      color: root.tint(root.accent, 0.18)
+                      PlainLabel {
+                        anchors.centerIn: parent
+                        text: Commons.I18n.formatNumber(index + 1)
+                        color: root.accent
+                        font.pixelSize: Style.font.caption
+                        font.bold: true
+                      }
+                    }
+                    PlainLabel {
+                      width: parent.width - stepBadge.width - parent.spacing
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: strings.t(modelData)
+                      wrapMode: Text.WordWrap
+                    }
+                  }
+                }
+              }
+
+              Flow {
+                width: parent.width
+                spacing: Style.space(6)
+
+                Repeater {
+                  model: [
+                    ["↑ ↓", "help.keySelect"], ["Enter", "help.keyRestore"], ["E", "help.keyWindows"],
+                    ["U", "help.keyUpdate"], ["R", "help.keyRename"], ["X", "help.keyDelete"],
+                    ["S", "help.keyName"], ["?", "help.keyHelp"], ["Esc", "help.keyClose"]
+                  ]
+                  Row {
+                    required property var modelData
+                    spacing: Style.space(4)
+
+                    Rectangle {
+                      anchors.verticalCenter: parent.verticalCenter
+                      implicitWidth: Math.max(Style.space(18), keyText.implicitWidth + Style.space(8))
+                      implicitHeight: keyText.implicitHeight + Style.space(2)
+                      radius: Style.cornerRadius
+                      color: "transparent"
+                      border.width: Math.max(1, Style.normalBorderWidth)
+                      border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.3)
+                      PlainLabel {
+                        id: keyText
+                        anchors.centerIn: parent
+                        text: modelData[0]
+                        font.pixelSize: Style.font.caption
+                        font.bold: true
+                      }
+                    }
+                    PlainLabel {
+                      anchors.verticalCenter: parent.verticalCenter
+                      text: strings.t(modelData[1])
+                      color: root.dim
+                      font.pixelSize: Style.font.caption
+                    }
+                  }
+                }
               }
             }
           }
@@ -278,13 +434,13 @@ Panel {
                 id: track
                 anchors.fill: parent
                 radius: height / 2
-                color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.12)
+                color: root.tint(root.accent, 0.16)
               }
               Rectangle {
                 anchors.left: track.left
                 height: track.height
                 radius: track.radius
-                color: root.foreground
+                color: root.accent
                 width: Math.max(track.height, track.width * Model.progressFraction(root.service.progressDone, root.service.progressTotal))
                 Behavior on width { NumberAnimation { duration: Style.duration(200); easing.type: Easing.OutCubic } }
               }
@@ -354,7 +510,7 @@ Panel {
               id: saveButton
               iconText: root.saveGlyph
               text: strings.t("save.button")
-              foreground: root.foreground
+              foreground: enabled ? root.accent : root.foreground
               fontFamily: root.fontFamily
               bordered: true
               enabled: Model.cleanName(saveField.text) !== "" && !root.service.busy
@@ -418,9 +574,12 @@ Panel {
 
     implicitHeight: cardColumn.implicitHeight + Style.space(20)
     radius: Style.cornerRadius
-    color: selected ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.06) : "transparent"
+    readonly property var groups: Model.groupWindows(slot)
+    color: selected || restoringThis ? root.tint(root.accent, 0.07) : "transparent"
     border.width: Math.max(1, Style.normalBorderWidth)
-    border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, selected ? 0.35 : 0.14)
+    border.color: restoringThis ? root.accent
+      : (selected ? root.tint(root.accent, 0.6) : Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.14))
+    Behavior on border.color { ColorAnimation { duration: Style.duration(120) } }
 
     HoverHandler { onHoveredChanged: if (hovered) root.cursor = card.index }
 
@@ -431,27 +590,40 @@ Panel {
       width: parent.width - Style.space(20)
       spacing: Style.space(8)
 
-      // Name row: expand chevron, name (or rename field), warning count.
-      Row {
+      // Header: the whole block toggles the window list; the chevron on the
+      // right shows which way it will go.
+      Item {
+        id: header
         width: parent.width
-        spacing: Style.space(6)
+        implicitHeight: info.implicitHeight
 
+        MouseArea {
+          anchors.fill: parent
+          enabled: !card.renaming
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.toggleExpanded(card.slot.id)
+        }
+
+        // Lines up with the name, not the whole block under it.
         PanelActionButton {
           id: chevron
-          anchors.verticalCenter: parent.verticalCenter
-          iconText: card.expanded ? root.chevronDown : (Commons.I18n.rightToLeft ? "󰅁" : root.chevronRight)
+          anchors.right: parent.right
+          y: Math.max(0, ((card.renaming ? renameField.height : nameLabel.height) - height) / 2)
+          iconText: card.expanded ? root.chevronUp : root.chevronDown
           tooltipText: card.expanded ? strings.t("slot.collapse") : strings.t("slot.expand")
-          foreground: root.foreground
+          foreground: card.expanded ? root.accent : root.dim
+          hoverColor: root.accent
           fontFamily: root.fontFamily
           onClicked: root.toggleExpanded(card.slot.id)
         }
 
         Column {
-          width: parent.width - chevron.width - parent.spacing
-          anchors.verticalCenter: parent.verticalCenter
+          id: info
+          width: parent.width - chevron.width - Style.space(6)
           spacing: Style.space(2)
 
           PlainLabel {
+            id: nameLabel
             visible: !card.renaming
             width: parent.width
             text: card.slot.name
@@ -482,6 +654,25 @@ Panel {
             elide: Text.ElideRight
           }
 
+          // One chip per saved workspace, tinted like its group below,
+          // so a session's shape reads at a glance even when collapsed.
+          Flow {
+            width: parent.width
+            spacing: Style.space(4)
+            visible: card.groups.length > 0
+            topPadding: Style.space(2)
+
+            Repeater {
+              model: card.groups
+              WorkspaceChip {
+                required property var modelData
+                workspace: modelData.workspace
+                label: Model.workspaceShort(modelData.workspace)
+                count: modelData.windows.length
+              }
+            }
+          }
+
           PlainLabel {
             visible: card.slot.warningCount > 0
             width: parent.width
@@ -501,7 +692,8 @@ Panel {
           text: strings.t("slot.restore")
           iconText: root.iconGlyph
           fontSize: Style.font.bodySmall
-          foreground: root.foreground
+          foreground: enabled || card.restoringThis ? root.accent : root.foreground
+          accent: root.accent
           fontFamily: root.fontFamily
           bordered: true
           active: card.restoringThis
@@ -531,6 +723,8 @@ Panel {
           iconText: root.deleteGlyph
           fontSize: Style.font.bodySmall
           foreground: root.confirmDeleteId === card.slot.id ? root.warn : root.foreground
+          background: root.confirmDeleteId === card.slot.id ? root.tint(root.warn, 0.14) : "transparent"
+          bordered: root.confirmDeleteId === card.slot.id
           fontFamily: root.fontFamily
           enabled: !card.restoringThis
           onClicked: root.deleteSlot(card.slot.id)
@@ -544,31 +738,114 @@ Panel {
         spacing: Style.space(8)
 
         Repeater {
-          model: card.expanded ? Model.groupWindows(card.slot) : []
+          model: card.expanded ? card.groups : []
 
           Column {
             id: group
             required property var modelData
+            readonly property color hue: root.hueFor(modelData.workspace)
             width: cardColumn.width
-            spacing: Style.space(4)
+            spacing: Style.space(6)
 
-            PlainLabel {
+            Row {
               width: parent.width
-              text: Model.workspaceLabel(group.modelData.workspace, strings.t)
-                + (group.modelData.mode ? " · " + root.modeLabel(group.modelData.mode) : "")
-                + (group.modelData.monitor ? " · " + group.modelData.monitor : "")
-              color: root.dim
-              font.pixelSize: Style.font.caption
-              font.bold: true
-              elide: Text.ElideRight
+              spacing: Style.space(8)
+
+              Rectangle {
+                id: groupBadge
+                anchors.verticalCenter: parent.verticalCenter
+                implicitWidth: badgeText.implicitWidth + Style.space(12)
+                implicitHeight: badgeText.implicitHeight + Style.space(4)
+                radius: Style.cornerRadius
+                color: root.tint(group.hue, 0.16)
+
+                PlainLabel {
+                  id: badgeText
+                  anchors.centerIn: parent
+                  text: Model.workspaceLabel(group.modelData.workspace, strings.t)
+                  color: group.hue
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
+              }
+
+              PlainLabel {
+                width: parent.width - groupBadge.width - parent.spacing
+                anchors.verticalCenter: parent.verticalCenter
+                text: (group.modelData.mode ? root.modeLabel(group.modelData.mode) : "")
+                  + (group.modelData.mode && group.modelData.monitor ? " · " : "")
+                  + (group.modelData.monitor || "")
+                color: root.dim
+                font.pixelSize: Style.font.caption
+                elide: Text.ElideRight
+              }
             }
 
-            Repeater {
-              model: group.modelData.windows
-              WindowRow { width: group.width; slotId: card.slot.id }
+            // The group's windows hang off a rail in its tint.
+            Item {
+              width: parent.width
+              implicitHeight: groupWindows.implicitHeight
+
+              Rectangle {
+                x: Style.space(4)
+                width: Math.max(2, Style.normalBorderWidth * 2)
+                height: parent.height
+                radius: width / 2
+                color: root.tint(group.hue, 0.55)
+              }
+
+              Column {
+                id: groupWindows
+                x: Style.space(14)
+                width: parent.width - x
+                spacing: Style.space(4)
+
+                Repeater {
+                  model: group.modelData.windows
+                  WindowRow { width: groupWindows.width; slotId: card.slot.id }
+                }
+              }
             }
           }
         }
+      }
+    }
+  }
+
+  component WorkspaceChip: Rectangle {
+    id: chip
+    property string workspace: ""
+    property string label: ""
+    property int count: 0
+    readonly property color hue: root.hueFor(workspace)
+
+    implicitWidth: chipRow.implicitWidth + Style.space(10)
+    implicitHeight: chipRow.implicitHeight + Style.space(2)
+    radius: height / 2
+    color: root.tint(hue, 0.14)
+
+    Row {
+      id: chipRow
+      anchors.centerIn: parent
+      spacing: Style.space(4)
+
+      Rectangle {
+        anchors.verticalCenter: parent.verticalCenter
+        width: Style.space(6)
+        height: width
+        radius: width / 2
+        color: chip.hue
+      }
+      PlainLabel {
+        text: chip.label
+        color: chip.hue
+        font.pixelSize: Style.font.caption
+        font.bold: true
+      }
+      PlainLabel {
+        text: Commons.I18n.formatNumber(chip.count)
+        color: root.dim
+        font.pixelSize: Style.font.caption
       }
     }
   }
@@ -600,13 +877,14 @@ Panel {
 
         PlainLabel {
           width: parent.width
-          text: Model.windowLabel(row.win)
+          text: Model.windowApp(row.win)
           elide: Text.ElideRight
         }
         PlainLabel {
           width: parent.width
+          visible: text !== ""
           text: row.win.warning === "unresolved" ? strings.t("window.unresolved")
-            : (row.win.warning === "missing" ? strings.t("window.missing") : Model.appLabel(row.win.cls))
+            : (row.win.warning === "missing" ? strings.t("window.missing") : Model.windowDetail(row.win, root.home))
           color: row.win.warning !== "" ? root.warn : root.dim
           font.pixelSize: Style.font.caption
           wrapMode: row.win.warning !== "" ? Text.WordWrap : Text.NoWrap
@@ -619,7 +897,8 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
         iconText: root.terminalGlyph
         tooltipText: strings.t("window.editCommand")
-        foreground: row.win.warning !== "" ? root.warn : root.foreground
+        foreground: row.win.warning !== "" ? root.warn : root.dim
+        hoverColor: row.win.warning !== "" ? root.warn : root.accent
         fontFamily: root.fontFamily
         onClicked: root.editKey = row.editing ? "" : row.rowKey
       }
@@ -629,7 +908,8 @@ Panel {
         anchors.verticalCenter: parent.verticalCenter
         iconText: root.closeGlyph
         tooltipText: strings.t("window.remove")
-        foreground: root.foreground
+        foreground: root.dim
+        hoverColor: root.warn
         fontFamily: root.fontFamily
         onClicked: root.service.removeWindow(row.slotId, row.win.key)
       }

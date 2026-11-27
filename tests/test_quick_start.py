@@ -191,6 +191,22 @@ class ResolveTests(unittest.TestCase):
         launch = qs.resolve_launch(client("0x8", "someapp", "x", 61, (1, "1")), proc, self.desktop)
         self.assertEqual(launch["command"], ["/usr/bin/someapp"])
 
+    def test_app_name_comes_from_the_desktop_entry_not_the_title(self):
+        def name(cls, title, procs, pid):
+            c = client("0xa", cls, title, pid, (1, "1"))
+            proc = FakeProc(procs)
+            return qs.app_name(c, qs.resolve_launch(c, proc, self.desktop), self.desktop)
+
+        self.assertEqual(name("com.t3tools.T3Code", "repo / thread", {}, 0), "T3 Code")
+        self.assertEqual(name("dev.zed.Zed", "proj — file.qml", {}, 0), "Zed")
+        self.assertEqual(name("org.telegram.desktop", "(1) Chat", {}, 0), "Telegram")
+        self.assertEqual(name("chrome-youtube.com__-Default", "(591) YouTube", {}, 0), "YouTube")
+        # A web app without its own entry is named after its site, not the browser.
+        helium = {5: {"exe": "/opt/helium-browser-bin/helium", "cmdline": ["/opt/helium-browser-bin/helium"]}}
+        self.assertEqual(name("chrome-x.com__-Default", "Home / X", helium, 5), "x.com")
+        self.assertEqual(name("someapp", "x", {6: {"exe": "/usr/bin/some_app", "cmdline": ["/usr/bin/some_app"]}}, 6), "Some app")
+        self.assertEqual(name("nothing", "x", {}, 0), "")
+
     def test_desktop_id_matches_class_when_wmclass_differs(self):
         launch = qs.resolve_launch(client("0x9", "org.telegram.desktop", "Chat", 1, (1, "1")), FakeProc({}), self.desktop)
         self.assertEqual(launch["command"], ["Telegram", "--"])

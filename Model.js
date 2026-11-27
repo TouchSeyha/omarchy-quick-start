@@ -48,6 +48,8 @@ function cleanWindow(raw) {
     key: key,
     cls: clipText(raw["class"], 128),
     title: clipText(raw.title, MAX_TEXT),
+    appName: clipText(raw.appName, 128),
+    cwd: clipText(launch.cwd, 4096),
     workspace: clipText(raw.workspace, 64),
     monitor: clipText(raw.monitor, 64),
     floating: raw.floating === true,
@@ -217,6 +219,30 @@ function windowLabel(w) {
   return title !== "" ? title : cls
 }
 
+// The row's main line: the app that will open. Sessions saved before
+// appName existed fall back to a name made from the window class.
+function windowApp(w) {
+  if (!w) return ""
+  return String(w.appName || "").trim() || appLabel(w.cls) || windowLabel(w)
+}
+
+// The row's second line: what is restored with the app when something is
+// (a web app's site, a terminal's directory), otherwise the saved title,
+// which only tells two windows of one app apart.
+function windowDetail(w, home) {
+  if (!w) return ""
+  var app = windowApp(w)
+  var detail = ""
+  if (w.kind === "terminal" && w.cwd) {
+    detail = home && (w.cwd === home || w.cwd.indexOf(home + "/") === 0) ? "~" + w.cwd.substring(home.length) : w.cwd
+  } else if (w.kind === "webapp") {
+    var site = appLabel(w.cls)
+    detail = site !== app ? site : ""
+  }
+  if (detail === "") detail = String(w.title || "").trim()
+  return detail === app ? "" : detail
+}
+
 function appLabel(cls) {
   var s = String(cls || "")
   var webapp = /^(chrome|brave|msedge|vivaldi|chromium|helium)-(.+?)_.*-[^-]+$/.exec(s)
@@ -249,6 +275,46 @@ function warningText(event, tr) {
   return ""
 }
 
+// Workspace tints come from the theme's own named colors, in this order.
+// Red is left out on purpose: in this panel it means "needs attention".
+// Older themes only ship ANSI slots, so each name falls back to its slot.
+var WORKSPACE_HUES = [["blue", "color4"], ["green", "color2"], ["magenta", "color5"], ["yellow", "color3"], ["cyan", "color6"], ["orange", ""]]
+
+function themeHues(raw) {
+  var found = {}
+  var lines = String(raw || "").split("\n")
+  for (var i = 0; i < lines.length && i < 512; i++) {
+    var match = lines[i].match(/^\s*([A-Za-z0-9_]+)\s*=\s*["']?(#[0-9A-Fa-f]{6})\b/)
+    if (match) found[match[1]] = match[2]
+  }
+  var out = []
+  for (var j = 0; j < WORKSPACE_HUES.length; j++) {
+    var hex = found[WORKSPACE_HUES[j][0]] || found[WORKSPACE_HUES[j][1]]
+    if (hex && out.indexOf(hex.toLowerCase()) === -1) out.push(hex.toLowerCase())
+  }
+  return out
+}
+
+// The same workspace gets the same tint in every session: numbered ones
+// cycle through the hues, named and special ones hash to a stable pick.
+function workspaceHueIndex(name, count) {
+  if (!(count > 0)) return -1
+  var s = String(name || "")
+  var n = Number(s)
+  if (s !== "" && isFinite(n) && n >= 1) return (Math.floor(n) - 1) % count
+  var h = 0
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 1000003
+  return h % count
+}
+
+// What fits in a small chip: "11", or a named/special workspace's own name.
+function workspaceShort(name) {
+  var s = String(name || "")
+  if (s.indexOf("special:") === 0) return s.substring(8)
+  if (s.indexOf("name:") === 0) return s.substring(5)
+  return s
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     clipText: clipText,
@@ -264,6 +330,11 @@ if (typeof module !== "undefined") {
     appLabel: appLabel,
     progressLabel: progressLabel,
     progressFraction: progressFraction,
-    warningText: warningText
+    warningText: warningText,
+    themeHues: themeHues,
+    workspaceHueIndex: workspaceHueIndex,
+    workspaceShort: workspaceShort,
+    windowApp: windowApp,
+    windowDetail: windowDetail
   }
 }

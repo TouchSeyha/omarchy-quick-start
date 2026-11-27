@@ -109,3 +109,45 @@ test("every QML Text in the plugin is plain text (markup-shaped titles stay iner
     }
   }
 })
+
+test("themeHues reads named theme colors in order, skipping red, with ANSI fallbacks", () => {
+  const named = 'accent = "#7aa2f7"\nred = "#f7768e"\nblue = "#7aa2f7"\ngreen = "#9ece6a"\nmagenta = "#ad8ee6"\nyellow = "#e0af68"\ncyan = "#449dab"\norange = "#eb927b"\n'
+  assert.deepEqual(Model.themeHues(named), ["#7aa2f7", "#9ece6a", "#ad8ee6", "#e0af68", "#449dab", "#eb927b"])
+  const ansi = 'color1 = "#aa0000"\ncolor2 = "#00AA00"\ncolor4 = "#0000aa"\n'
+  assert.deepEqual(Model.themeHues(ansi), ["#0000aa", "#00aa00"])
+  assert.deepEqual(Model.themeHues(""), [])
+  assert.deepEqual(Model.themeHues('blue = "#111111"\ngreen = "#111111"\n'), ["#111111"])
+})
+
+test("workspaceHueIndex is stable per workspace and bounded", () => {
+  assert.equal(Model.workspaceHueIndex("1", 6), 0)
+  assert.equal(Model.workspaceHueIndex("7", 6), 0)
+  assert.equal(Model.workspaceHueIndex("12", 6), 5)
+  assert.equal(Model.workspaceHueIndex("1", 0), -1)
+  const special = Model.workspaceHueIndex("special:scratchpad", 6)
+  assert.ok(special >= 0 && special < 6)
+  assert.equal(Model.workspaceHueIndex("special:scratchpad", 6), special)
+  assert.equal(Model.workspaceShort("special:scratchpad"), "scratchpad")
+  assert.equal(Model.workspaceShort("name:code"), "code")
+  assert.equal(Model.workspaceShort("11"), "11")
+})
+
+test("window rows lead with the app and keep the title as a hint", () => {
+  const t3 = { appName: "T3 Code", cls: "com.t3tools.T3Code", title: "omarchy-quick-start / Save tabs", kind: "desktop" }
+  assert.equal(Model.windowApp(t3), "T3 Code")
+  assert.equal(Model.windowDetail(t3, "/home/u"), "omarchy-quick-start / Save tabs")
+
+  const music = { appName: "YT Music", cls: "chrome-music.youtube.com__-Default", title: "YouTube Music", kind: "webapp" }
+  assert.equal(Model.windowDetail(music, "/home/u"), "music.youtube.com")
+  const x = { appName: "x.com", cls: "chrome-x.com__-Default", title: "Home / X", kind: "webapp" }
+  assert.equal(Model.windowDetail(x, "/home/u"), "Home / X")
+
+  const term = { appName: "Ghostty", cls: "com.mitchellh.ghostty", title: "zsh", kind: "terminal", cwd: "/home/u/Work/app" }
+  assert.equal(Model.windowDetail(term, "/home/u"), "~/Work/app")
+  assert.equal(Model.windowDetail({ ...term, cwd: "/home/uu/x" }, "/home/u"), "/home/uu/x")
+
+  // Saved before appName existed: the class still gives a name.
+  assert.equal(Model.windowApp({ cls: "dev.zed.Zed", title: "proj — file" }), "Zed")
+  assert.equal(Model.windowDetail({ appName: "Zed", title: "Zed" }, ""), "")
+  assert.equal(Model.cleanWindow({ key: "w1", appName: "T3 Code", launch: { kind: "terminal", cwd: "/tmp" } }).cwd, "/tmp")
+})
