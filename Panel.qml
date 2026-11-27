@@ -36,7 +36,6 @@ Panel {
 
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.4)
-  readonly property color accent: Commons.Color.accent
   readonly property color warn: bar && bar.urgent ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
@@ -147,11 +146,17 @@ Panel {
     return out
   }
 
+  // Closing an inline editor, however it closes, hands keys back to the panel.
+  onRenamingIdChanged: if (renamingId === "") refocus()
+  onEditKeyChanged: if (editKey === "") refocus()
+  onSlotsChanged: cursor = Math.max(0, Math.min(cursor, slots.length - 1))
+
   Component.onCompleted: if (service) service.ensureLoaded()
   onOpenedChanged: {
     if (opened) {
       if (service) service.refresh()
       confirmDeleteId = ""
+      saveNotice = ""
       cursor = Math.max(0, Math.min(cursor, slots.length - 1))
     } else {
       renamingId = ""
@@ -340,8 +345,9 @@ Panel {
               font.family: root.fontFamily
               maximumLength: 64
               onActiveFocusChanged: root.textFocus = activeFocus
-              onAccepted: if (root.saveCurrent(text)) { text = ""; keyCatcher.forceActiveFocus() }
-              Keys.onEscapePressed: function(event) { text = ""; keyCatcher.forceActiveFocus(); event.accepted = true }
+              onTextEdited: root.saveNotice = ""
+              onAccepted: if (root.saveCurrent(text)) { text = ""; root.refocus() }
+              Keys.onEscapePressed: function(event) { text = ""; root.saveNotice = ""; root.refocus(); event.accepted = true }
             }
 
             Button {
@@ -464,11 +470,8 @@ Panel {
             maximumLength: 64
             onVisibleChanged: if (visible) { text = card.slot.name; selectAll(); forceActiveFocus() }
             onActiveFocusChanged: root.textFocus = activeFocus
-            onAccepted: {
-              if (root.service.rename(card.slot.id, text)) root.renamingId = ""
-              root.refocus()
-            }
-            Keys.onEscapePressed: function(event) { root.renamingId = ""; root.refocus(); event.accepted = true }
+            onAccepted: if (root.service.rename(card.slot.id, text)) root.renamingId = ""
+            Keys.onEscapePressed: function(event) { root.renamingId = ""; event.accepted = true }
           }
 
           PlainLabel {
@@ -642,11 +645,8 @@ Panel {
       font.pixelSize: Style.font.bodySmall
       onVisibleChanged: if (visible) { text = row.win.commandText; forceActiveFocus() }
       onActiveFocusChanged: root.textFocus = activeFocus
-      onAccepted: {
-        if (root.service.setCommand(row.slotId, row.win.key, text)) root.editKey = ""
-        root.refocus()
-      }
-      Keys.onEscapePressed: function(event) { root.editKey = ""; root.refocus(); event.accepted = true }
+      onAccepted: if (root.service.setCommand(row.slotId, row.win.key, text)) root.editKey = ""
+      Keys.onEscapePressed: function(event) { root.editKey = ""; event.accepted = true }
     }
   }
 }

@@ -1,4 +1,3 @@
-import argparse
 import json
 import os
 import re
@@ -209,6 +208,14 @@ class ResolveTests(unittest.TestCase):
         foot = qs.resolve_launch(client("0xb", "foot", "x", 200, (1, "1")), FakeProc({200: {"exe": "/usr/bin/foot", "children": []}}), self.desktop)
         self.assertEqual(foot["command"], ["foot"])
 
+    def test_slashes_inside_words_are_not_directories(self):
+        proc = FakeProc({300: {"exe": "/usr/bin/ghostty", "children": [301, 302]}, 301: {"shell": True}, 302: {"shell": True}})
+        for title in ("feat/tmp", "build 1/var", "a/b ~nope"):
+            launch = qs.resolve_launch(client("0xe", "com.mitchellh.ghostty", title, 300, (1, "1")), proc, self.desktop, windows_for_pid=2)
+            self.assertEqual(launch["command"], ["ghostty"], title)
+        launch = qs.resolve_launch(client("0xf", "com.mitchellh.ghostty", "u@host:/tmp", 300, (1, "1")), proc, self.desktop, windows_for_pid=2)
+        self.assertEqual(launch["cwd"], os.path.realpath("/tmp"))
+
     def test_shared_terminal_process_uses_directory_titles(self):
         proc = FakeProc({300: {"exe": "/usr/bin/ghostty", "children": [301, 302]}, 301: {"shell": True, "cwd": "/"}, 302: {"shell": True, "cwd": "/"}})
         launch = qs.resolve_launch(client("0xc", "com.mitchellh.ghostty", "~", 300, (1, "1")), proc, self.desktop, windows_for_pid=2)
@@ -318,6 +325,12 @@ class StoreCommandTests(unittest.TestCase):
         self.assertEqual(window["launch"]["command"], ["sh", "-c", "echo $(id)", ";", "reboot"])
         with self.assertRaises(qs.QuickStartError):
             self.run_cmd("set-command", "personal", key, "unterminated 'quote")
+
+    def test_names_and_patterns_starting_with_a_dash_are_values(self):
+        out = self.run_cmd("save", "--ignore=-x*", "--", "-work")
+        self.assertEqual(out["slots"][0]["name"], "-work")
+        out = self.run_cmd("rename", "--", out["saved"], "-h")
+        self.assertEqual(out["slots"][0]["name"], "-h")
 
     def test_rejects_path_traversal_ids(self):
         with self.assertRaises(qs.QuickStartError):
@@ -451,6 +464,29 @@ class RestoreTests(unittest.TestCase):
         for verb in ("resize", "window.move", "focus", "float", "exec_cmd"):
             self.assertNotIn(verb, sent)
         self.assertEqual(self.events[-1]["event"], "done")
+
+    def test_each_window_keeps_its_exact_title_match_first(self):
+        slot = {
+            "name": "Two", "focusedMonitor": "DP-2", "monitors": [], "workspaces": [],
+            "windows": [
+                {"key": "w1", "class": "foot", "initialClass": "foot", "title": "old title", "workspace": "11", "monitor": "DP-2",
+                 "floating": False, "pinned": False, "at": [0, 0], "size": [10, 10], "order": 0, "launch": {"command": []}},
+                {"key": "w2", "class": "foot", "initialClass": "foot", "title": "build", "workspace": "12", "monitor": "DP-2",
+                 "floating": False, "pinned": False, "at": [0, 0], "size": [10, 10], "order": 1, "launch": {"command": []}},
+            ],
+        }
+        hypr = FakeHypr([client("0xbuild", "foot", "build", 1, (12, "12")), client("0xother", "foot", "renamed", 2, (13, "13"))])
+        restorer = qs.Restorer(hypr, slot, self.events.append, clock=self.clock, sleep=self.clock.sleep, run=lambda argv: None)
+        restorer.monitor_map = {}
+        restorer.reuse_existing([dict(w) for w in slot["windows"]])
+        self.assertEqual(restorer.assigned, {"w2": "0xbuild", "w1": "0xother"})
+
+    def test_cancel_during_settle_skips_the_layout_pass(self):
+        restorer = qs.Restorer(self.hypr, self.slot, self.events.append, clock=self.clock, sleep=self.clock.sleep, run=lambda argv: None)
+        restorer.wait_until_settled = lambda: setattr(restorer, "cancelled", True)
+        restorer.run_restore()
+        self.assertEqual(self.events[-1]["event"], "cancelled")
+        self.assertFalse(any("relative = false" in lua or "hl.dsp.focus" in lua for lua in self.hypr.evals))
 
     def test_cancel_stops_before_the_layout_pass(self):
         restorer = qs.Restorer(self.hypr, self.slot, self.events.append, clock=self.clock, sleep=self.clock.sleep, run=lambda argv: None)

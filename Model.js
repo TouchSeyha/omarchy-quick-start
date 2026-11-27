@@ -11,9 +11,8 @@ var MAX_SLOTS = 64
 var MAX_WINDOWS = 128
 var MAX_TEXT = 256
 var MAX_NAME = 64
-var MAX_WARNINGS = 32
 
-var WARNING_CODES = ["unresolved", "missing", "timeout", "launchFailed", "monitorFallback", "layoutFailed", "layoutUnsaved"]
+var WARNING_CODES = ["unresolved", "timeout", "launchFailed", "monitorFallback", "layoutFailed", "layoutUnsaved"]
 
 function clipText(value, limit) {
   if (value === undefined || value === null) return ""
@@ -250,14 +249,6 @@ function warningText(event, tr) {
   return ""
 }
 
-function pushWarning(list, event, tr) {
-  var line = warningText(event, tr)
-  if (line === "") return list
-  var next = list.slice(0, MAX_WARNINGS - 1)
-  next.push(line)
-  return next
-}
-
 if (typeof module !== "undefined") {
   module.exports = {
     clipText: clipText,
@@ -273,7 +264,6 @@ if (typeof module !== "undefined") {
     appLabel: appLabel,
     progressLabel: progressLabel,
     progressFraction: progressFraction,
-    warningText: warningText,
-    pushWarning: pushWarning
+    warningText: warningText
   }
 }

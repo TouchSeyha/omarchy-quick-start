@@ -23,8 +23,6 @@ Item {
   property bool loaded: false
   property bool busy: false
   property string lastError: ""
-  property string lastSaved: ""
-  property int revision: 0
 
   property bool restoring: false
   property string restoreId: ""
@@ -34,6 +32,7 @@ Item {
   property var restoreWarnings: []
   property string restoreOutcome: ""   // "", "done", "cancelled", "error"
   property string restoreError: ""
+  property bool cancelRequested: false
 
   property var queue: []
 
@@ -47,23 +46,25 @@ Item {
     var out = []
     if (includeSpecial === true) out.push("--include-special")
     var list = Model.clipText(ignore, 2048)
-    if (list !== "") out.push("--ignore", list)
+    // Joined to its flag so a pattern starting with "-" stays a value.
+    if (list !== "") out.push("--ignore=" + list)
     return out
   }
 
   function save(name, includeSpecial, ignore) {
     var clean = Model.cleanName(name)
     if (clean === "") return false
-    enqueue(["save", clean].concat(flags(includeSpecial, ignore)))
+    // "--" ends the options, so a name like "-work" is still a name.
+    enqueue(["save"].concat(flags(includeSpecial, ignore), ["--", clean]))
     return true
   }
 
-  function update(id, includeSpecial, ignore) { enqueue(["update", id].concat(flags(includeSpecial, ignore))) }
+  function update(id, includeSpecial, ignore) { enqueue(["update"].concat(flags(includeSpecial, ignore), ["--", id])) }
 
   function rename(id, name) {
     var clean = Model.cleanName(name)
     if (clean === "") return false
-    enqueue(["rename", id, clean])
+    enqueue(["rename", "--", id, clean])
     return true
   }
 
@@ -72,7 +73,7 @@ Item {
   function setCommand(id, key, command) {
     var text = Model.clipText(command, 4096).trim()
     if (text === "") return false
-    enqueue(["set-command", id, key, text])
+    enqueue(["set-command", "--", id, key, text])
     return true
   }
 
@@ -112,10 +113,8 @@ Item {
     if (result.slots !== null) {
       root.slots = result.slots
       root.loaded = true
-      root.revision++
     }
     root.lastError = result.ok ? "" : (result.error || "generic")
-    if (result.ok && result.saved) root.lastSaved = result.saved
   }
 
   function restore(id) {
@@ -129,13 +128,16 @@ Item {
     root.restoreWarnings = []
     root.restoreOutcome = ""
     root.restoreError = ""
+    root.cancelRequested = false
     restoreProc.command = [root.python3Path, "-I", "-S", "-B", root.backendPath, "restore", slot.id]
     restoreProc.running = true
     return true
   }
 
   function cancelRestore() {
-    if (restoreProc.running) restoreProc.signal(15)
+    if (!restoreProc.running) return
+    root.cancelRequested = true
+    restoreProc.signal(15)
   }
 
   function dismissOutcome() {
@@ -192,7 +194,8 @@ Item {
     }
     stderr: StdioCollector { waitForEnd: true }
     onExited: function(exitCode) {
-      if (root.restoreOutcome === "") root.restoreOutcome = exitCode === 0 ? "done" : "error"
+      // Killed before it could say so itself (SIGTERM before its handler).
+      if (root.restoreOutcome === "") root.restoreOutcome = root.cancelRequested ? "cancelled" : (exitCode === 0 ? "done" : "error")
       root.restoring = false
     }
   }

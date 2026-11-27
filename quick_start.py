@@ -415,13 +415,13 @@ def terminal_cwd(proc, pid, windows_for_pid, title):
             return cwd
     # Several windows share one process (single-instance terminals): a title
     # that is a directory is the only honest way to tell them apart.
-    candidate = (title or "").strip()
-    for prefix in ("~", "/"):
-        idx = candidate.find(prefix)
-        if idx != -1:
-            path = os.path.expanduser(candidate[idx:].split(" ")[0])
-            if os.path.isdir(path):
-                return os.path.realpath(path)
+    # Only a path that starts the title or follows a space or colon, as in
+    # "user@host:~/src", never a slash inside a word like "feat/tmp".
+    match = re.search(r"(?:^|[\s:])([~/][^\s]*)", (title or "").strip())
+    if match:
+        path = os.path.expanduser(match.group(1))
+        if os.path.isdir(path):
+            return os.path.realpath(path)
     return ""
 
 
@@ -865,19 +865,20 @@ class Restorer:
             or (window.get("initialClass") and window.get("initialClass") == client.get("initialClass"))
         )
 
-    def pick(self, window, candidates):
-        matching = [c for c in candidates if self.same_app(window, c)]
-        if not matching:
-            return None
-        for test in (
-            lambda c: c.get("title") == window.get("title"),
-            lambda c: c.get("initialTitle") == window.get("initialTitle") and c.get("workspace", {}).get("name") == window.get("workspace"),
-            lambda c: (c.get("workspace") or {}).get("name") == window.get("workspace"),
-        ):
-            for client in matching:
-                if test(client):
-                    return client
-        return matching[0]
+    @staticmethod
+    def client_workspace(client):
+        return str((client.get("workspace") or {}).get("name") or "")
+
+    def match_tests(self):
+        """From most to least certain; every window gets a chance at each
+        level before any falls back to a looser one."""
+        ws = lambda w: w["workspace"].replace("name:", "", 1)
+        return (
+            lambda w, c: c.get("title") == w.get("title"),
+            lambda w, c: c.get("initialTitle") == w.get("initialTitle") and self.client_workspace(c) == ws(w),
+            lambda w, c: self.client_workspace(c) == ws(w),
+            lambda w, c: True,
+        )
 
     def move_calls(self, window, client):
         if (client.get("workspace") or {}).get("name") == window["workspace"].replace("name:", "", 1):
@@ -897,16 +898,18 @@ class Restorer:
             if include_special or not str((c.get("workspace") or {}).get("name") or "").startswith("special:")
         ]
         calls = []
-        still = []
-        # Exact titles first so two windows of one app keep their own places.
-        for window in sorted(pending, key=lambda w: w["order"]):
-            client = self.pick(window, pool)
-            if client is None:
-                still.append(window)
-                continue
-            pool.remove(client)
-            self.assigned[window["key"]] = client["address"]
-            calls.extend(self.move_calls(window, client))
+        still = sorted(pending, key=lambda w: w["order"])
+        # Exact titles first, across all windows, so two windows of one app
+        # keep their own places even when the first one's title changed.
+        for test in self.match_tests():
+            for window in list(still):
+                client = next((c for c in pool if self.same_app(window, c) and test(window, c)), None)
+                if client is None:
+                    continue
+                pool.remove(client)
+                still.remove(window)
+                self.assigned[window["key"]] = client["address"]
+                calls.extend(self.move_calls(window, client))
         self.hypr.dispatch_all(calls)
         return still, {c.get("address") for c in clients}
 
@@ -962,8 +965,14 @@ class Restorer:
                         try:
                             chunk = events.recv(65536)
                         except (BlockingIOError, InterruptedError):
-                            chunk = b""
-                        wake = any(tag in chunk for tag in (b"openwindow>>", b"changeclass>>", b"windowtitlev2>>"))
+                            chunk = None
+                        if chunk == b"":
+                            # Hyprland closed the socket (a config reload):
+                            # fall back to polling instead of spinning.
+                            events.close()
+                            events = None
+                            chunk = None
+                        wake = bool(chunk) and any(tag in chunk for tag in (b"openwindow>>", b"changeclass>>", b"windowtitlev2>>"))
                 else:
                     self.sleep(0.4)
                 if not wake and self.clock() - last_poll < 1.2:
@@ -1288,12 +1297,19 @@ class Restorer:
             return
         self.wait_until_settled()
         mode_of = {ws["name"]: ws.get("mode") for ws in self.slot.get("workspaces", [])}
-        self.place_workspaces()
-        self.reorder(mode_of)
-        self.float_states(mode_of)
-        self.geometry(mode_of)
-        self.sleep(0.2)
-        self.focus_and_pin()
+        # Float state first: a window that should float must leave the tiled
+        # layout before the tiled windows are put in order, and vice versa.
+        for phase in (
+            self.place_workspaces,
+            lambda: self.float_states(mode_of),
+            lambda: self.reorder(mode_of),
+            lambda: self.geometry(mode_of),
+            self.focus_and_pin,
+        ):
+            if self.cancelled:
+                self.emit({"event": "cancelled", "done": done, "total": total})
+                return
+            phase()
         self.emit({"event": "done", "done": done, "total": total, "warnings": len(self.warnings)})
 
 
