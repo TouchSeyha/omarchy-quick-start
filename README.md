@@ -4,7 +4,7 @@
 
 Quick-Start is an [Omarchy](https://omarchy.org) bar widget that saves open Hyprland windows into named sessions and restores them on demand. It runs no background service, timers, or auto-save, so it uses zero CPU while idle.
 
-![Quick-Start panel showing a saved session with blurred window details](preview.png)
+![Quick-Start README cover showing saved sessions, workspace grouping, and privacy blur](cover.png)
 
 ## Features
 
